@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sääasema</title>
+<style>
+  :root{
+    --tausta: #12161b;
+    --paneeli: #1a2029;
+    --paneeli-reuna: #262e3a;
+    --teksti: #e7eaee;
+    --teksti-himmea: #8a94a3;
+    --lampo: #e8a33d;
+    --kosteus: #4fc3d9;
+    --ok: #4caf7d;
+    --virhe: #d9534f;
+  }
+  *{ box-sizing: border-box; }
+  html,body{
+    margin:0; padding:0; min-height:100%;
+    background: var(--tausta);
+    color: var(--teksti);
+    font-family: "Inter", -apple-system, "Segoe UI", sans-serif;
+  }
+  .sivu{
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 40px 20px 60px;
+  }
+  header{
+    display:flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  h1{
+    font-size: 1.3rem;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: 0.01em;
+  }
+  .tila{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size: 0.85rem;
+    color: var(--teksti-himmea);
+  }
+  .tila-piste{
+    width:8px; height:8px; border-radius:50%;
+    background: var(--teksti-himmea);
+    transition: background 0.3s;
+  }
+  .tila-piste.ok{ background: var(--ok); }
+  .tila-piste.virhe{ background: var(--virhe); }
+
+  .lukemat{
+    display:flex;
+    gap: 24px;
+    margin-bottom: 36px;
+    flex-wrap: wrap;
+  }
+  .lukema{
+    flex:1;
+    min-width: 220px;
+    background: var(--paneeli);
+    border: 1px solid var(--paneeli-reuna);
+    border-radius: 10px;
+    padding: 24px 28px;
+  }
+  .lukema .otsikko{
+    font-size: 0.85rem;
+    color: var(--teksti-himmea);
+    margin-bottom: 10px;
+  }
+  .lukema .arvo{
+    font-family: "JetBrains Mono", "Courier New", monospace;
+    font-size: 3rem;
+    font-weight: 500;
+    line-height: 1;
+  }
+  .lukema .arvo .yksikko{
+    font-size: 1.4rem;
+    color: var(--teksti-himmea);
+    margin-left: 4px;
+  }
+  .lukema.lampo .arvo{ color: var(--lampo); }
+  .lukema.kosteus .arvo{ color: var(--kosteus); }
+
+  .kaavio-paneeli{
+    background: var(--paneeli);
+    border: 1px solid var(--paneeli-reuna);
+    border-radius: 10px;
+    padding: 20px 20px 12px;
+  }
+  .kaavio-paneeli .otsikko{
+    font-size: 0.85rem;
+    color: var(--teksti-himmea);
+    margin-bottom: 12px;
+  }
+  #kaavio{ width: 100%; height: 180px; display:block; }
+  .kaavio-selite{
+    display:flex;
+    gap: 20px;
+    margin-top: 8px;
+    font-size: 0.78rem;
+    color: var(--teksti-himmea);
+  }
+  .kaavio-selite span{ display:flex; align-items:center; gap:6px; }
+  .vari-piste{ width:9px; height:9px; border-radius:2px; display:inline-block; }
+
+  footer{
+    margin-top: 24px;
+    font-size: 0.78rem;
+    color: var(--teksti-himmea);
+    text-align: right;
+  }
+
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --tausta: #f4f5f7;
+      --paneeli: #ffffff;
+      --paneeli-reuna: #e2e5ea;
+      --teksti: #1a1f27;
+      --teksti-himmea: #6b7280;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="sivu">
+  <header>
+    <h1>Lämpötila &amp; kosteus</h1>
+    <div class="tila">
+      <span class="tila-piste" id="tila-piste"></span>
+      <span id="tila-teksti">Yhdistetään…</span>
+    </div>
+  </header>
+
+  <div class="lukemat">
+    <div class="lukema lampo">
+      <div class="otsikko">Lämpötila</div>
+      <div class="arvo"><span id="lampo-arvo">–</span><span class="yksikko">°C</span></div>
+    </div>
+    <div class="lukema kosteus">
+      <div class="otsikko">Ilmankosteus</div>
+      <div class="arvo"><span id="kosteus-arvo">–</span><span class="yksikko">%</span></div>
+    </div>
+  </div>
+
+  <div class="kaavio-paneeli">
+    <div class="otsikko">Viimeisimmät mittaukset</div>
+    <svg id="kaavio" viewBox="0 0 600 180" preserveAspectRatio="none"></svg>
+    <div class="kaavio-selite">
+      <span><span class="vari-piste" style="background:var(--lampo)"></span>Lämpötila</span>
+      <span><span class="vari-piste" style="background:var(--kosteus)"></span>Kosteus</span>
+    </div>
+  </div>
+
+  <footer id="paivitetty">–</footer>
+</div>
+
+<script>
+function asetaTila(luokka, teksti){
+  document.getElementById('tila-piste').className = 'tila-piste ' + luokka;
+  document.getElementById('tila-teksti').textContent = teksti;
+}
+
+function piirraKaavio(historia){
+  const svg = document.getElementById('kaavio');
+  const leveys = 600, korkeus = 180, marginaali = 10;
+  svg.innerHTML = '';
+  if (!historia || historia.length < 2) return;
+
+  const lammot = historia.map(d => d.temperature);
+  const kosteudet = historia.map(d => d.humidity);
+
+  function polku(arvot, minA, maxA){
+    const alue = (maxA - minA) || 1;
+    return arvot.map((v, i) => {
+      const x = marginaali + (i / (arvot.length - 1)) * (leveys - 2 * marginaali);
+      const y = korkeus - marginaali - ((v - minA) / alue) * (korkeus - 2 * marginaali);
+      return (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1);
+    }).join(' ');
+  }
+
+  const lPolku = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  lPolku.setAttribute('d', polku(lammot, Math.min(...lammot) - 1, Math.max(...lammot) + 1));
+  lPolku.setAttribute('fill', 'none');
+  lPolku.setAttribute('stroke', 'var(--lampo)');
+  lPolku.setAttribute('stroke-width', '2');
+  svg.appendChild(lPolku);
+
+  const kPolku = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  kPolku.setAttribute('d', polku(kosteudet, Math.min(...kosteudet) - 2, Math.max(...kosteudet) + 2));
+  kPolku.setAttribute('fill', 'none');
+  kPolku.setAttribute('stroke', 'var(--kosteus)');
+  kPolku.setAttribute('stroke-width', '2');
+  svg.appendChild(kPolku);
+}
+
+let historiaCache = [];
+
+function nayta(viimeisin){
+  if (!viimeisin || viimeisin.temperature === undefined) return;
+  document.getElementById('lampo-arvo').textContent = viimeisin.temperature.toFixed(1);
+  document.getElementById('kosteus-arvo').textContent = viimeisin.humidity.toFixed(1);
+  document.getElementById('paivitetty').textContent = 'Päivitetty ' + (viimeisin.received_at || '');
+}
+
+async function lataaAlkutila(){
+  try{
+    const [viimeisinVastaus, historiaVastaus] = await Promise.all([
+      fetch('/api/data'),
+      fetch('/api/history')
+    ]);
+    const viimeisin = await viimeisinVastaus.json();
+    historiaCache = await historiaVastaus.json();
+    nayta(viimeisin);
+    piirraKaavio(historiaCache);
+  } catch(e){
+    asetaTila('virhe', 'Ei yhteyttä palvelimeen');
+  }
+}
+
+function aloitaLiveVirta(){
+  asetaTila('', 'Yhdistetään…');
+  const virta = new EventSource('/api/stream');
+
+  virta.onopen = () => asetaTila('ok', 'Live-yhteydessä');
+
+  virta.onmessage = (viesti) => {
+    const uusi = JSON.parse(viesti.data);
+    nayta(uusi);
+    historiaCache.push(uusi);
+    historiaCache = historiaCache.slice(-200);
+    piirraKaavio(historiaCache);
+    asetaTila('ok', 'Live-yhteydessä');
+  };
+
+  virta.onerror = () => {
+    asetaTila('virhe', 'Yhteys katkesi, yritetään uudelleen…');
+    // EventSource yrittää automaattisesti uudelleenyhdistää
+  };
+}
+
+lataaAlkutila().then(aloitaLiveVirta);
+</script>
+</body>
+</html>
