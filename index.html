@@ -112,6 +112,62 @@
   .kaavio-selite span{ display:flex; align-items:center; gap:6px; }
   .vari-piste{ width:9px; height:9px; border-radius:2px; display:inline-block; }
 
+  .osio-vali{ margin-top: 36px; }
+
+  .osio-otsikkorivi{
+    display:flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .osio-otsikkorivi h2{
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0;
+  }
+  select#paiva-valitsin{
+    background: var(--paneeli);
+    color: var(--teksti);
+    border: 1px solid var(--paneeli-reuna);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.85rem;
+  }
+
+  .tilastot{
+    display:flex;
+    gap: 16px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .tilasto{
+    flex:1;
+    min-width: 90px;
+    background: var(--paneeli);
+    border: 1px solid var(--paneeli-reuna);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .tilasto .otsikko{
+    font-size: 0.72rem;
+    color: var(--teksti-himmea);
+    margin-bottom: 4px;
+  }
+  .tilasto .arvo{
+    font-family: "JetBrains Mono", "Courier New", monospace;
+    font-size: 1.1rem;
+  }
+  .tilasto.lampo .arvo{ color: var(--lampo); }
+  .tilasto.kosteus .arvo{ color: var(--kosteus); }
+
+  .ei-dataa{
+    color: var(--teksti-himmea);
+    font-size: 0.85rem;
+    padding: 12px 0;
+  }
+
   footer{
     margin-top: 24px;
     font-size: 0.78rem;
@@ -160,6 +216,33 @@
     </div>
   </div>
 
+  <div class="osio-vali">
+    <div class="osio-otsikkorivi">
+      <h2>Päivähistoria</h2>
+      <select id="paiva-valitsin"></select>
+    </div>
+
+    <div class="tilastot" id="paiva-tilastot" style="display:none">
+      <div class="tilasto lampo">
+        <div class="otsikko">Lämpö min / ka / max</div>
+        <div class="arvo" id="tilasto-lampo">–</div>
+      </div>
+      <div class="tilasto kosteus">
+        <div class="otsikko">Kosteus min / ka / max</div>
+        <div class="arvo" id="tilasto-kosteus">–</div>
+      </div>
+    </div>
+
+    <div class="kaavio-paneeli">
+      <svg id="paiva-kaavio" viewBox="0 0 600 180" preserveAspectRatio="none"></svg>
+      <div id="paiva-ei-dataa" class="ei-dataa" style="display:none">Ei mittauksia valitulle päivälle.</div>
+      <div class="kaavio-selite">
+        <span><span class="vari-piste" style="background:var(--lampo)"></span>Lämpötila</span>
+        <span><span class="vari-piste" style="background:var(--kosteus)"></span>Kosteus</span>
+      </div>
+    </div>
+  </div>
+
   <footer id="paivitetty">–</footer>
 </div>
 
@@ -169,8 +252,8 @@ function asetaTila(luokka, teksti){
   document.getElementById('tila-teksti').textContent = teksti;
 }
 
-function piirraKaavio(historia){
-  const svg = document.getElementById('kaavio');
+function piirraKaavio(historia, svgId){
+  const svg = document.getElementById(svgId);
   const leveys = 600, korkeus = 180, marginaali = 10;
   svg.innerHTML = '';
   if (!historia || historia.length < 2) return;
@@ -220,7 +303,7 @@ async function lataaAlkutila(){
     const viimeisin = await viimeisinVastaus.json();
     historiaCache = await historiaVastaus.json();
     nayta(viimeisin);
-    piirraKaavio(historiaCache);
+    piirraKaavio(historiaCache, 'kaavio');
   } catch(e){
     asetaTila('virhe', 'Ei yhteyttä palvelimeen');
   }
@@ -237,7 +320,7 @@ function aloitaLiveVirta(){
     nayta(uusi);
     historiaCache.push(uusi);
     historiaCache = historiaCache.slice(-200);
-    piirraKaavio(historiaCache);
+    piirraKaavio(historiaCache, 'kaavio');
     asetaTila('ok', 'Live-yhteydessä');
   };
 
@@ -247,7 +330,71 @@ function aloitaLiveVirta(){
   };
 }
 
+function muotoilePvm(pvmStr){
+  // pvmStr muotoa YYYY-MM-DD -> näytetään suomalaisittain
+  const [v, k, p] = pvmStr.split('-');
+  return p + '.' + k + '.' + v;
+}
+
+async function lataaPaivalista(){
+  const valitsin = document.getElementById('paiva-valitsin');
+  try{
+    const vastaus = await fetch('/api/paivat');
+    const paivat = await vastaus.json();
+    valitsin.innerHTML = '';
+    if (paivat.length === 0){
+      const optio = document.createElement('option');
+      optio.textContent = 'Ei dataa vielä';
+      valitsin.appendChild(optio);
+      return;
+    }
+    paivat.forEach((pvm, i) => {
+      const optio = document.createElement('option');
+      optio.value = pvm;
+      optio.textContent = muotoilePvm(pvm) + (i === 0 ? ' (tänään)' : '');
+      valitsin.appendChild(optio);
+    });
+    valitsin.addEventListener('change', () => lataaPaivanData(valitsin.value));
+    lataaPaivanData(paivat[0]);
+  } catch(e){
+    valitsin.innerHTML = '<option>Virhe ladattaessa</option>';
+  }
+}
+
+async function lataaPaivanData(pvm){
+  try{
+    const vastaus = await fetch('/api/paiva/' + pvm);
+    const data = await vastaus.json();
+
+    const tilastoLohko = document.getElementById('paiva-tilastot');
+    const eiDataa = document.getElementById('paiva-ei-dataa');
+
+    if (!data.tilastot || data.mittaukset.length === 0){
+      tilastoLohko.style.display = 'none';
+      eiDataa.style.display = 'block';
+      document.getElementById('paiva-kaavio').innerHTML = '';
+      return;
+    }
+
+    eiDataa.style.display = 'none';
+    tilastoLohko.style.display = 'flex';
+
+    const t = data.tilastot;
+    document.getElementById('tilasto-lampo').textContent =
+      t.lampo_min.toFixed(1) + ' / ' + t.lampo_ka.toFixed(1) + ' / ' + t.lampo_max.toFixed(1) + ' °C';
+    document.getElementById('tilasto-kosteus').textContent =
+      t.kosteus_min.toFixed(1) + ' / ' + t.kosteus_ka.toFixed(1) + ' / ' + t.kosteus_max.toFixed(1) + ' %';
+
+    piirraKaavio(data.mittaukset, 'paiva-kaavio');
+  } catch(e){
+    document.getElementById('paiva-ei-dataa').style.display = 'block';
+    document.getElementById('paiva-ei-dataa').textContent = 'Virhe ladattaessa päivän dataa.';
+  }
+}
+
 lataaAlkutila().then(aloitaLiveVirta);
+lataaPaivalista();
 </script>
 </body>
 </html>
+
